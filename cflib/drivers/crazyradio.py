@@ -169,10 +169,9 @@ class Crazyradio:
         if (pyusb1 is False):
             if self.handle:
                 self.handle.releaseInterface()
-                self.handle.reset()
         else:
             if self.dev:
-                self.dev.reset()
+                usb.util.dispose_resources(self.dev)
 
         self.handle = None
         self.dev = None
@@ -279,10 +278,10 @@ class Crazyradio:
                     result = result + (i,)
             return result
 
-    # Data transferts
+    # Data transfers
     def send_packet(self, dataOut):
         """ Send a packet and receive the ack from the radio dongle
-            The ack contains information about the packet transmition
+            The ack contains information about the packet transmission
             and a data payload if the ack packet contained any """
         ackIn = None
         data = None
