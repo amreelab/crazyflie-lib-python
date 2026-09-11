@@ -7,7 +7,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2011-2013 Bitcraze AB
+#  Copyright (C) 2011-2026 Bitcraze AB
 #
 #  Crazyflie Nano Quadcopter Client
 #
@@ -20,28 +20,22 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 Crazyflie USB driver.
 
 This driver is used to communicate with the Crazyflie using the USB connection.
 """
 import logging
+import queue
 import re
-import sys
 import threading
 
 from .crtpstack import CRTPPacket
 from .exceptions import WrongUriType
 from cflib.crtp.crtpdriver import CRTPDriver
 from cflib.drivers.cfusb import CfUsb
-if sys.version_info < (3,):
-    import Queue as queue
-else:
-    import queue
 
 __author__ = 'Bitcraze AB'
 __all__ = ['UsbDriver']
@@ -58,34 +52,31 @@ class UsbDriver(CRTPDriver):
         self.cfusb = None
         self.uri = ''
         self.link_error_callback = None
-        self.link_quality_callback = None
+        self.radio_link_statistics_callback = None
         self.in_queue = None
         self.out_queue = None
         self._thread = None
         self.needs_resending = False
 
-    def connect(self, uri, link_quality_callback, link_error_callback):
+    def connect(self, uri, radio_link_statistics_callback, link_error_callback):
         """
         Connect the link driver to a specified URI of the format:
         radio://<dongle nbr>/<radio channel>/[250K,1M,2M]
 
-        The callback for linkQuality can be called at any moment from the
-        driver to report back the link quality in percentage. The
-        callback from linkError will be called when a error occues with
-        an error message.
+        The callback for radio link statistics should not be called from the usb driver
+        The callback from linkError will be called when a error occurs with an error message.
         """
 
         # check if the URI is a radio URI
-        if not re.search('^usb://', uri):
+        uri_data = re.search('^usb://([0-9]+)$',
+                             uri)
+        if not uri_data:
             raise WrongUriType('Not a radio URI')
 
         # Open the USB dongle
         if not re.search('^usb://([0-9]+)$',
                          uri):
             raise WrongUriType('Wrong radio URI format!')
-
-        uri_data = re.search('^usb://([0-9]+)$',
-                             uri)
 
         self.uri = uri
 
@@ -107,7 +98,7 @@ class UsbDriver(CRTPDriver):
 
         # Launch the comm thread
         self._thread = _UsbReceiveThread(self.cfusb, self.in_queue,
-                                         link_quality_callback,
+                                         radio_link_statistics_callback,
                                          link_error_callback)
         self._thread.start()
 
@@ -159,7 +150,7 @@ class UsbDriver(CRTPDriver):
             return
 
         self._thread = _UsbReceiveThread(self.cfusb, self.in_queue,
-                                         self.link_quality_callback,
+                                         self.radio_link_statistics_callback,
                                          self.link_error_callback)
         self._thread.start()
 
@@ -215,9 +206,7 @@ class _UsbReceiveThread(threading.Thread):
     Radio link receiver thread used to read data from the
     Crazyradio USB driver. """
 
-    # RETRYCOUNT_BEFORE_DISCONNECT = 10
-
-    def __init__(self, cfusb, inQueue, link_quality_callback,
+    def __init__(self, cfusb, inQueue, radio_link_statistics_callback,
                  link_error_callback):
         """ Create the object """
         threading.Thread.__init__(self)
@@ -225,7 +214,7 @@ class _UsbReceiveThread(threading.Thread):
         self.in_queue = inQueue
         self.sp = False
         self.link_error_callback = link_error_callback
-        self.link_quality_callback = link_quality_callback
+        self.radio_link_statistics_callback = radio_link_statistics_callback
 
     def stop(self):
         """ Stop the thread """

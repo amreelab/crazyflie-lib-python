@@ -6,7 +6,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2019 Bitcraze AB
+#  Copyright (C) 2019-2026 Bitcraze AB
 #
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License
@@ -17,10 +17,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 import time
 import unittest
 
@@ -34,7 +32,7 @@ class TestResponseTime(unittest.TestCase):
     ECHO = 0
 
     def setUp(self):
-        cflib.crtp.init_drivers(enable_debug_driver=False)
+        cflib.crtp.init_drivers()
         self.test_rig_support = RigSupport()
 
         self.links = []
@@ -108,7 +106,7 @@ class TestResponseTime(unittest.TestCase):
         while time.time() < time_end:
             for link in links:
                 if link.uri not in response_timestamps:
-                    response = link.receive_packet(time=NO_BLOCKING)
+                    response = link.receive_packet(wait=NO_BLOCKING)
                     if self._is_response_correct_seq_nr(response, seq_nr):
                         response_timestamps[link.uri] = time.time()
 
@@ -130,14 +128,14 @@ class TestResponseTime(unittest.TestCase):
         return False
 
     def connect_link(self, uri):
-        link = cflib.crtp.get_link_driver(uri, self._link_quality_cb,
+        link = cflib.crtp.get_link_driver(uri, self._radio_link_statistics_cb,
                                           self._link_error_cb)
         self.assertIsNotNone(link)
         self.links.append(link)
 
         return link
 
-    def _link_quality_cb(self, percentage):
+    def _radio_link_statistics_cb(self, radoi_link_statistics):
         pass
 
     def _link_error_cb(self, errmsg):

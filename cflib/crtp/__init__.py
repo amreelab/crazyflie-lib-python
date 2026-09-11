@@ -7,7 +7,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2011-2013 Bitcraze AB
+#  Copyright (C) 2011-2026 Bitcraze AB
 #
 #  Crazyflie Nano Quadcopter Client
 #
@@ -20,17 +20,17 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Scans and creates communication interfaces."""
 import logging
+import os
 
-from .debugdriver import DebugDriver
 from .exceptions import WrongUriType
+from .prrtdriver import PrrtDriver
 from .radiodriver import RadioDriver
 from .serialdriver import SerialDriver
+from .tcpdriver import TcpDriver
 from .udpdriver import UdpDriver
 from .usbdriver import UsbDriver
 
@@ -40,18 +40,26 @@ __all__ = []
 logger = logging.getLogger(__name__)
 
 
-DRIVERS = [RadioDriver, SerialDriver, UdpDriver, DebugDriver, UsbDriver]
 CLASSES = []
 
 
-def init_drivers(enable_debug_driver=False):
+def init_drivers(enable_debug_driver=False, enable_serial_driver=False):
     """Initialize all the drivers."""
-    for driver in DRIVERS:
-        try:
-            if driver != DebugDriver or enable_debug_driver:
-                CLASSES.append(driver)
-        except Exception:  # pylint: disable=W0703
-            continue
+
+    env = os.getenv('USE_CFLINK')
+    if env is not None and env == 'cpp':
+        from .cflinkcppdriver import CfLinkCppDriver
+        CLASSES.append(CfLinkCppDriver)
+    else:
+        CLASSES.extend([RadioDriver, UsbDriver])
+
+    if enable_debug_driver:
+        logger.warn('The debug driver is no longer supported!')
+
+    if enable_serial_driver:
+        CLASSES.append(SerialDriver)
+
+    CLASSES.extend([UdpDriver, PrrtDriver, TcpDriver])
 
 
 def scan_interfaces(address=None):
@@ -81,14 +89,14 @@ def get_interfaces_status():
     return status
 
 
-def get_link_driver(uri, link_quality_callback=None, link_error_callback=None):
+def get_link_driver(uri, radio_link_statistics_callback=None, link_error_callback=None):
     """Return the link driver for the given URI. Returns None if no driver
     was found for the URI or the URI was not well formatted for the matching
     driver."""
     for driverClass in CLASSES:
         try:
             instance = driverClass()
-            instance.connect(uri, link_quality_callback, link_error_callback)
+            instance.connect(uri, radio_link_statistics_callback, link_error_callback)
             return instance
         except WrongUriType:
             continue

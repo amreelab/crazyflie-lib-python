@@ -6,7 +6,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2018 Bitcraze AB
+#  Copyright (C) 2018-2026 Bitcraze AB
 #
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License
@@ -17,23 +17,18 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
-import sys
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 import unittest
+from unittest.mock import call
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie import Log
 from cflib.crazyflie.log import LogConfig
 from cflib.utils.callbacks import Caller
 from cflib.utils.multiranger import Multiranger
-
-if sys.version_info < (3, 3):
-    from mock import MagicMock, call, patch
-else:
-    from unittest.mock import MagicMock, call, patch
 
 
 class MultirangerTest(unittest.TestCase):

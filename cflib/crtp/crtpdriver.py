@@ -7,7 +7,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2011-2013 Bitcraze AB
+#  Copyright (C) 2011-2026 Bitcraze AB
 #
 #  Crazyflie Nano Quadcopter Client
 #
@@ -20,10 +20,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 CRTP Driver main class.
 """
@@ -44,11 +42,11 @@ class CRTPDriver:
         """
         self.needs_resending = True
 
-    def connect(self, uri, link_quality_callback, link_error_callback):
+    def connect(self, uri, radio_link_statistics_callback, link_error_callback):
         """Connect the driver to a specified URI
 
         @param uri Uri of the link to open
-        @param link_quality_callback Callback to report link quality in percent
+        @param radio_link_statistics_callback Callback to report radio link statistics
         @param link_error_callback Callback to report errors (will result in
                disconnection)
         """

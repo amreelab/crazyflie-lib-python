@@ -7,7 +7,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2011-2013 Bitcraze AB
+#  Copyright (C) 2011-2026 Bitcraze AB
 #
 #  Crazyflie Nano Quadcopter Client
 #
@@ -20,14 +20,13 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 Used for sending control setpoints to the Crazyflie
 """
 import logging
+import warnings
 
 from cflib.crtp.crtpstack import CRTPPacket
 from cflib.crtp.crtpstack import CRTPPort
@@ -39,8 +38,12 @@ logger = logging.getLogger(__name__)
 
 PLATFORM_COMMAND = 0
 VERSION_COMMAND = 1
+APP_CHANNEL = 2
 
 PLATFORM_SET_CONT_WAVE = 0
+PLATFORM_REQUEST_ARMING = 1              # Deprecated: use supervisor.send_arming_request()
+PLATFORM_REQUEST_CRASH_RECOVERY = 2      # Deprecated: use supervisor.send_crash_recovery_request()
+PLATFORM_REQUEST_USER_NOTIFICATION = 3
 
 VERSION_GET_PROTOCOL = 0
 VERSION_GET_FIRMWARE = 1
@@ -59,15 +62,9 @@ class PlatformService():
         """
         self._cf = crazyflie
 
-        self._cf.add_port_callback(CRTPPort.PLATFORM,
-                                   self._platform_callback)
-        self._cf.add_port_callback(CRTPPort.LINKCTRL,
-                                   self._crt_service_callback)
+        self._cf.add_port_callback(CRTPPort.PLATFORM, self._platform_callback)
+        self._cf.add_port_callback(CRTPPort.LINKCTRL, self._crt_service_callback)
 
-        # Request protocol version.
-        # The semaphore makes sure that other module will wait for the version
-        # to be received before using it.
-        self._has_protocol_version = False
         self._protocolVersion = -1
         self._callback = None
 
@@ -89,7 +86,54 @@ class PlatformService():
         """
         pk = CRTPPacket()
         pk.set_header(CRTPPort.PLATFORM, PLATFORM_COMMAND)
-        pk.data = (0, enabled)
+
+        pk.data = (PLATFORM_SET_CONT_WAVE, enabled)
+        self._cf.send_packet(pk)
+
+    def send_arming_request(self, do_arm: bool):
+        """
+        Send system arm/disarm request (deprecated).
+
+        Args:
+            do_arm (bool): True = arm the system, False = disarm the system
+
+        Deprecated:
+            Use `supervisor.send_arming_request(do_arm)` instead.
+        """
+        warnings.warn(
+            'platform.send_arming_request is deprecated. '
+            'Use supervisor.send_arming_request(do_arm) instead.',
+            category=DeprecationWarning,
+            stacklevel=2
+        )
+
+        self._cf.supervisor.send_arming_request(do_arm)
+
+    def send_crash_recovery_request(self):
+        """
+        Send crash recovery request (deprecated).
+
+        Deprecated:
+            Use `supervisor.send_crash_recovery_request()` instead.
+        """
+        warnings.warn(
+            'platform.send_crash_recovery_request is deprecated. '
+            'Use supervisor.send_crash_recovery_request() instead.',
+            category=DeprecationWarning,
+            stacklevel=2
+        )
+
+        self._cf.supervisor.send_crash_recovery_request()
+
+    def send_user_notification(self, success: bool = True):
+        """
+        Send a user notification to the Crazyflie. This is used to notify a user of some sort of event by using the
+        means available on the Crazyflie.
+        """
+        pk = CRTPPacket()
+        pk.set_header(CRTPPort.PLATFORM, PLATFORM_COMMAND)
+        notification_type = 1 if success else 0
+        pk.data = (PLATFORM_REQUEST_USER_NOTIFICATION, notification_type)
         self._cf.send_packet(pk)
 
     def get_protocol_version(self):
@@ -105,26 +149,29 @@ class PlatformService():
         pk.set_header(CRTPPort.LINKCTRL, LINKSERVICE_SOURCE)
         pk.data = (0,)
         self._cf.send_packet(pk)
+        logger.info('Request _request_protocol_version()')
 
     def _crt_service_callback(self, pk):
         if pk.channel == LINKSERVICE_SOURCE:
+            logger.info('_crt_service_callback')
             # If the sink contains a magic string, get the protocol version,
             # otherwise -1
             if pk.data[:18].decode('utf8') == 'Bitcraze Crazyflie':
                 pk = CRTPPacket()
                 pk.set_header(CRTPPort.PLATFORM, VERSION_COMMAND)
                 pk.data = (VERSION_GET_PROTOCOL, )
+                logger.info('Request protocol version')
                 self._cf.send_packet(pk)
             else:
                 self._protocolVersion = -1
-                logger.info('Procotol version: {}'.format(
-                    self.get_protocol_version()))
+                logger.info('Protocol version (crt): {}'.format(self.get_protocol_version()))
                 self._callback()
 
     def _platform_callback(self, pk):
-        if pk.channel == VERSION_COMMAND and \
-                pk.data[0] == VERSION_GET_PROTOCOL:
-            self._protocolVersion = pk.data[1]
-            logger.info('Procotol version: {}'.format(
-                self.get_protocol_version()))
-            self._callback()
+        if pk.channel == VERSION_COMMAND:
+            logger.info('_platform_callback')
+
+            if pk.data[0] == VERSION_GET_PROTOCOL:
+                self._protocolVersion = pk.data[1]
+                logger.info('Protocol version (platform): {}'.format(self.get_protocol_version()))
+                self._callback()

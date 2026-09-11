@@ -7,7 +7,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2011-2013 Bitcraze AB
+#  Copyright (C) 2011-2026 Bitcraze AB
 #
 #  Crazyflie Nano Quadcopter Client
 #
@@ -20,10 +20,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 The Crazyflie module is used to easily connect/send/receive data
 from a Crazyflie.
@@ -34,21 +32,26 @@ firmware which makes the mapping 1:1 in most cases.
 """
 import datetime
 import logging
-import time
+import warnings
 from collections import namedtuple
+from threading import current_thread
+from threading import Event
 from threading import Lock
 from threading import Thread
 from threading import Timer
 
 import cflib.crtp
+from .appchannel import Appchannel
 from .commander import Commander
 from .console import Console
 from .extpos import Extpos
+from .link_statistics import LinkStatistics
 from .localization import Localization
 from .log import Log
 from .mem import Memory
 from .param import Param
 from .platformservice import PlatformService
+from .supervisor import Supervisor
 from .toccache import TocCache
 from cflib.crazyflie.high_level_commander import HighLevelCommander
 from cflib.utils.callbacks import Caller
@@ -74,8 +77,8 @@ class Crazyflie():
         """
         Create the objects from this module and register callbacks.
 
-        ro_cache -- Path to read-only cache (string)
-        rw_cache -- Path to read-write cache (string)
+        @param ro_cache Path to read-only cache (string)
+        @param rw_cache Path to read-write cache (string)
         """
 
         # Called on disconnect, no matter the reason
@@ -86,17 +89,19 @@ class Crazyflie():
         self.link_established = Caller()
         # Called when the user requests a connection
         self.connection_requested = Caller()
-        # Called when the link is established and the TOCs (that are not
-        # cached) have been downloaded
+        # Called when the link is established and the TOCs (that are not cached) have been downloaded
         self.connected = Caller()
+        # Called when the the link is established and all data, including parameters have been downloaded
+        self.fully_connected = Caller()
+
         # Called if establishing of the link fails (i.e times out)
         self.connection_failed = Caller()
+        # Called if link driver has an error while state is DISCONNECTED
+        self.disconnected_link_error = Caller()
         # Called for every packet received
         self.packet_received = Caller()
         # Called for every packet sent
         self.packet_sent = Caller()
-        # Called when the link driver updates the link quality measurement
-        self.link_quality_updated = Caller()
 
         self.state = State.DISCONNECTED
 
@@ -105,8 +110,9 @@ class Crazyflie():
                                    rw_cache=rw_cache)
 
         self.incoming = _IncomingPacketHandler(self)
-        self.incoming.setDaemon(True)
-        self.incoming.start()
+        self.incoming.daemon = True
+        if self.link:
+            self.incoming.start()
 
         self.commander = Commander(self)
         self.high_level_commander = HighLevelCommander(self)
@@ -117,6 +123,9 @@ class Crazyflie():
         self.param = Param(self)
         self.mem = Memory(self)
         self.platform = PlatformService(self)
+        self.appchannel = Appchannel(self)
+        self.link_statistics = LinkStatistics(self)
+        self.supervisor = Supervisor(self)
 
         self.link_uri = ''
 
@@ -130,6 +139,8 @@ class Crazyflie():
 
         self.connected_ts = None
 
+        self.param.all_updated.add_callback(self._all_parameters_updated)
+
         # Connect callbacks to logger
         self.disconnected.add_callback(
             lambda uri: logger.info('Callback->Disconnected from [%s]', uri))
@@ -137,17 +148,31 @@ class Crazyflie():
         self.link_established.add_callback(
             lambda uri: logger.info('Callback->Connected to [%s]', uri))
         self.connection_lost.add_callback(
-            lambda uri, errmsg: logger.info(
-                'Callback->Connection lost to [%s]: %s', uri, errmsg))
+            lambda uri, errmsg: logger.info('Callback->Connection lost to [%s]: %s', uri, errmsg))
         self.connection_failed.add_callback(
-            lambda uri, errmsg: logger.info(
-                'Callback->Connected failed to [%s]: %s', uri, errmsg))
+            lambda uri, errmsg: logger.info('Callback->Connected failed to [%s]: %s', uri, errmsg))
         self.connection_requested.add_callback(
-            lambda uri: logger.info(
-                'Callback->Connection initialized[%s]', uri))
+            lambda uri: logger.info('Callback->Connection initialized[%s]', uri))
         self.connected.add_callback(
-            lambda uri: logger.info(
-                'Callback->Connection setup finished [%s]', uri))
+            lambda uri: logger.info('Callback->Connection setup finished [%s]', uri))
+        self.fully_connected.add_callback(
+            lambda uri: logger.info('Callback->Connection completed [%s]', uri))
+
+        self.connected.add_callback(
+            lambda uri: self.link_statistics.start())
+        self.disconnected.add_callback(
+            lambda uri: self.link_statistics.stop())
+
+    @property
+    def link_quality_updated(self):
+        # Issue a deprecation warning when the deprecated attribute is accessed
+        warnings.warn(
+            'link_quality_updated is deprecated and will be removed soon. '
+            'Please use link_statistics.link_quality_updated directly and/or update your client.',
+            DeprecationWarning,
+            stacklevel=2  # To point to the caller's code
+        )
+        return self.link_statistics.link_quality_updated
 
     def _disconnected(self, link_uri):
         """ Callback when disconnected."""
@@ -180,6 +205,11 @@ class Crazyflie():
         logger.info('Log TOC finished updating')
         self.mem.refresh(self._mems_updated_cb)
 
+    def _all_parameters_updated(self):
+        """Called when all parameters have been updated"""
+        logger.info('All parameters updated')
+        self.fully_connected.call(self.link_uri)
+
     def _link_error_cb(self, errmsg):
         """Called from the link driver when there's an error"""
         logger.warning('Got link error callback [%s] in state [%s]',
@@ -189,15 +219,13 @@ class Crazyflie():
         self.link = None
         if (self.state == State.INITIALIZED):
             self.connection_failed.call(self.link_uri, errmsg)
-        if (self.state == State.CONNECTED or
+        elif (self.state == State.CONNECTED or
                 self.state == State.SETUP_FINISHED):
             self.disconnected.call(self.link_uri)
             self.connection_lost.call(self.link_uri, errmsg)
+        elif (self.state == State.DISCONNECTED):
+            self.disconnected_link_error.call(self.link_uri, errmsg)
         self.state = State.DISCONNECTED
-
-    def _link_quality_cb(self, percentage):
-        """Called from link driver to report link quality"""
-        self.link_quality_updated.call(percentage)
 
     def _check_for_initial_packet_cb(self, data):
         """
@@ -220,7 +248,7 @@ class Crazyflie():
         self.link_uri = link_uri
         try:
             self.link = cflib.crtp.get_link_driver(
-                link_uri, self._link_quality_cb, self._link_error_cb)
+                link_uri, self.link_statistics.radio_link_statistics_callback, self._link_error_cb)
 
             if not self.link:
                 message = 'No driver found or malformed URI: {}' \
@@ -228,6 +256,8 @@ class Crazyflie():
                 logger.warning(message)
                 self.connection_failed.call(link_uri, message)
             else:
+                if not self.incoming.is_alive():
+                    self.incoming.start()
                 # Add a callback so we can check that any data is coming
                 # back from the copter
                 self.packet_received.add_callback(
@@ -256,8 +286,17 @@ class Crazyflie():
         if (self.link is not None):
             self.link.close()
             self.link = None
+        if self.incoming:
+            callbacks = list(self.incoming.cb)
+            if self.incoming.is_alive():
+                self.incoming.stop()
+                self.incoming.join(timeout=1)
+            self.incoming = _IncomingPacketHandler(self)
+            self.incoming.cb = callbacks
+            self.incoming.daemon = True
         self._answer_patterns = {}
         self.disconnected.call(self.link_uri)
+        self.state = State.DISCONNECTED
 
     """Check if the communication link is open or not."""
 
@@ -271,6 +310,14 @@ class Crazyflie():
     def remove_port_callback(self, port, cb):
         """Remove the callback cb on port"""
         self.incoming.remove_port_callback(port, cb)
+
+    def add_header_callback(self, cb, port, channel, port_mask=0xFF, channel_mask=0xFF):
+        """Add a callback to cb on port and channel"""
+        self.incoming.add_header_callback(cb, port, channel, port_mask, channel_mask)
+
+    def remove_header_callback(self, cb, port, channel, port_mask=0xFF, channel_mask=0xFF):
+        """Remove the callback cb on port and channel"""
+        self.incoming.remove_header_callback(cb, port, channel, port_mask, channel_mask)
 
     def _no_answer_do_retry(self, pk, pattern):
         """Resend packets that we have not gotten answers to"""
@@ -303,11 +350,15 @@ class Crazyflie():
         """
         Send a packet through the link interface.
 
-        pk -- Packet to send
-        expect_answer -- True if a packet from the Crazyflie is expected to
-                         be sent back, otherwise false
+        @param pk Packet to send
+        @param expect_answer True if a packet from the Crazyflie is expected to
+                             be sent back, otherwise false
 
         """
+
+        if not pk.is_data_size_valid():
+            raise Exception('Data part of packet is too large')
+
         self._send_lock.acquire()
         if self.link is not None:
             if len(expected_reply) > 0 and not resend and \
@@ -340,6 +391,9 @@ class Crazyflie():
             self.packet_sent.call(pk)
         self._send_lock.release()
 
+    def is_called_by_incoming_handler_thread(self):
+        return current_thread() == self.incoming
+
 
 _CallbackContainer = namedtuple('CallbackConstainer',
                                 'port port_mask channel channel_mask callback')
@@ -349,9 +403,11 @@ class _IncomingPacketHandler(Thread):
     """Handles incoming packets and sends the data to the correct receivers"""
 
     def __init__(self, cf):
-        Thread.__init__(self)
+        Thread.__init__(self, name='IncomingPacketHandlerThread')
+        self.daemon = True
         self.cf = cf
         self.cb = []
+        self._stop_event = Event()
 
     def add_port_callback(self, port, cb):
         """Add a callback for data that comes on a specific port"""
@@ -361,9 +417,7 @@ class _IncomingPacketHandler(Thread):
     def remove_port_callback(self, port, cb):
         """Remove a callback for data that comes on a specific port"""
         logger.debug('Removing callback on port [%d] to [%s]', port, cb)
-        for port_callback in self.cb:
-            if port_callback.port == port and port_callback.callback == cb:
-                self.cb.remove(port_callback)
+        self.remove_header_callback(cb, port, 0, 0xff, 0x0)
 
     def add_header_callback(self, cb, port, channel, port_mask=0xFF,
                             channel_mask=0xFF):
@@ -375,10 +429,27 @@ class _IncomingPacketHandler(Thread):
         self.cb.append(_CallbackContainer(port, port_mask,
                                           channel, channel_mask, cb))
 
+    def remove_header_callback(self, cb, port, channel, port_mask=0xFF,
+                               channel_mask=0xFF):
+        """
+        Remove a callback for a specific port/header callback with the
+        possibility to add a mask for channel and port for multiple
+        hits for same callback.
+        """
+        for port_callback in self.cb:
+            if port_callback.port == port and port_callback.port_mask == port_mask and \
+                    port_callback.channel == channel and port_callback.channel_mask == channel_mask and \
+                    port_callback.callback == cb:
+                self.cb.remove(port_callback)
+
+    def stop(self):
+        """Signal the thread to stop."""
+        self._stop_event.set()
+
     def run(self):
-        while True:
+        while not self._stop_event.is_set():
             if self.cf.link is None:
-                time.sleep(1)
+                self._stop_event.wait(1)
                 continue
             pk = self.cf.link.receive_packet(1)
 

@@ -6,7 +6,7 @@
 #  +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
 #   ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
 #
-#  Copyright (C) 2017 Bitcraze AB
+#  Copyright (C) 2017-2026 Bitcraze AB
 #
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License
@@ -17,24 +17,19 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA  02110-1301, USA.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 import math
-import sys
 import unittest
+from unittest.mock import call
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from cflib.crazyflie import Commander
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie import Param
 from cflib.positioning.motion_commander import _SetPointThread
 from cflib.positioning.motion_commander import MotionCommander
-
-if sys.version_info < (3, 3):
-    from mock import MagicMock, patch, call
-else:
-    from unittest.mock import MagicMock, patch, call
 
 
 @patch('time.sleep')
@@ -260,7 +255,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(0.0, 0.0, 0.0, rate),
+            call(0.0, 0.0, 0.0, -rate),
         ])
 
     def test_that_it_starts_turn_left(self, _SetPointThread_mock, sleep_mock):
@@ -275,7 +270,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(0.0, 0.0, 0.0, -rate),
+            call(0.0, 0.0, 0.0, rate),
         ])
 
     def test_that_it_starts_circle_right(
@@ -294,7 +289,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(velocity, 0.0, 0.0, expected_rate),
+            call(velocity, 0.0, 0.0, -expected_rate),
         ])
 
     def test_that_it_starts_circle_left(
@@ -313,7 +308,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(velocity, 0.0, 0.0, -expected_rate),
+            call(velocity, 0.0, 0.0, expected_rate),
         ])
 
     def test_that_it_turns_right(self, _SetPointThread_mock, sleep_mock):
@@ -330,7 +325,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(0.0, 0.0, 0.0, rate),
+            call(0.0, 0.0, 0.0, -rate),
             call(0.0, 0.0, 0.0, 0.0)
         ])
         sleep_mock.assert_called_with(turn_time)
@@ -349,7 +344,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(0.0, 0.0, 0.0, -rate),
+            call(0.0, 0.0, 0.0, rate),
             call(0.0, 0.0, 0.0, 0.0)
         ])
         sleep_mock.assert_called_with(turn_time)
@@ -373,7 +368,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(velocity, 0.0, 0.0, rate),
+            call(velocity, 0.0, 0.0, -rate),
             call(0.0, 0.0, 0.0, 0.0)
         ])
         sleep_mock.assert_called_with(turn_time)
@@ -397,7 +392,7 @@ class TestMotionCommander(unittest.TestCase):
 
         # Assert
         thread_mock.set_vel_setpoint.assert_has_calls([
-            call(velocity, 0.0, 0.0, -rate),
+            call(velocity, 0.0, 0.0, rate),
             call(0.0, 0.0, 0.0, 0.0)
         ])
         sleep_mock.assert_called_with(turn_time)

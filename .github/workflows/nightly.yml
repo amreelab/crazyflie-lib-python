@@ -1,0 +1,77 @@
+name: Nightly Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, lab-mac, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+
+    - name: Create venv
+      shell: bash
+      run: |
+        uv venv --clear --python ${{ matrix.python-version }}
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          echo "$PWD/.venv/Scripts" >> $GITHUB_PATH
+        else
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+        fi
+
+    - name: Set up MSVC environment (Windows)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+      if: runner.os == 'Windows'
+
+    - name: Build wheel
+      run: uv build --wheel
+
+    - name: Install the built wheel
+      shell: bash
+      run: |
+        WHEEL_FILE=$(ls dist/*.whl | head -n 1)
+        echo "Installing wheel: $WHEEL_FILE"
+        uv pip install "$WHEEL_FILE"
+
+    - name: Test
+      run: python -m unittest discover test/
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install dependencies
+        run: |
+          uv venv --clear
+          uv pip install -e . pdoc3
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+      - name: Build docs
+        run: ./tools/build-docs/build-docs
